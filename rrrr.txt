@@ -1,0 +1,10 @@
+pip install -U \
+langchain \
+langchain-core \
+langchain-community \
+langchain-google-genai \
+langchain-text-splitters \
+google-genai \
+faiss-cpu \
+pypdf \
+python-dotenv

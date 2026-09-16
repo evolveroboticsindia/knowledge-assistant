@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Environment variables / API keys
+.env
+*.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# FAISS / Vector Store
+faiss_index/
+vectorstore/
+chroma_db/
+
+# Uploaded/private documents
+documents/
+
+# Python packaging
+*.egg-info/
+dist/
+build/
+
+# Cache
+.cache/
