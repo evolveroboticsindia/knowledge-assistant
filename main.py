@@ -1,12 +1,10 @@
 import os
-from datetime import datetime
 
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.tools import tool
 from langchain.messages import HumanMessage
 
-from rag import get_retriever
+from tools import tools, document_search, system_datetime, num_docs
 
 
 # ============================================================
@@ -15,8 +13,6 @@ from rag import get_retriever
 
 load_dotenv()
 
-retriever, num_docs = get_retriever()
-
 llm = ChatGoogleGenerativeAI(
     model="gemini-3.5-flash-lite",
     google_api_key=os.getenv("GOOGLE_API_KEY"),
@@ -24,41 +20,8 @@ llm = ChatGoogleGenerativeAI(
 
 
 # ============================================================
-# TOOLS
-# ============================================================
-
-@tool
-def document_search(query: str) -> str:
-    """Search information from the uploaded PDF."""
-
-    docs = retriever.invoke(query)
-
-    if not docs:
-        return "No information found in the document."
-
-    return "\n\n".join(
-        doc.page_content
-        for doc in docs
-    )
-
-
-@tool
-def system_datetime() -> str:
-    """Get the current date and time."""
-
-    return datetime.now().strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
-
-
-# ============================================================
 # BIND TOOLS
 # ============================================================
-
-tools = [
-    document_search,
-    system_datetime
-]
 
 llm_with_tools = llm.bind_tools(tools)
 
