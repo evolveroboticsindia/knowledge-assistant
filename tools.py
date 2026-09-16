@@ -1,9 +1,26 @@
-import datetime
+from datetime import datetime
+
+from dotenv import load_dotenv
 from langchain.tools import tool
 
+from rag import get_retriever
+
+
+# ============================================================
+# SETUP
+# ============================================================
+
+load_dotenv()
+
+retriever, num_docs = get_retriever()
+
+
+# ============================================================
+# TOOLS
+# ============================================================
 
 @tool
-def document_search(query: str, retriever) -> str:
+def document_search(query: str) -> str:
     """Search information from the uploaded PDF."""
 
     docs = retriever.invoke(query)
@@ -12,16 +29,25 @@ def document_search(query: str, retriever) -> str:
         return "No information found in the document."
 
     return "\n\n".join(
-        doc.page_content[:800]
-        for doc in docs[:3]
+        doc.page_content
+        for doc in docs
     )
 
 
 @tool
 def system_datetime() -> str:
-    """Return the current system date and time."""
+    """Get the current date and time."""
 
-    return datetime.datetime.now().strftime(
+    return datetime.now().strftime(
         "%Y-%m-%d %H:%M:%S"
     )
 
+
+# ============================================================
+# TOOL LIST (import this in main.py)
+# ============================================================
+
+tools = [
+    document_search,
+    system_datetime
+]
