@@ -1,11 +1,12 @@
 import os
-import json
+from datetime import datetime
 
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain.tools import tool
+from langchain.messages import HumanMessage
 
 from rag import get_retriever
-import tools
 
 
 # ============================================================
@@ -13,214 +14,206 @@ import tools
 # ============================================================
 
 load_dotenv()
-key=os.environ["GOOGLE_API_KEY"]
+
+retriever, num_docs = get_retriever()
 
 llm = ChatGoogleGenerativeAI(
     model="gemini-3.5-flash-lite",
-    google_api_key=key,
-    temperature=0
+    google_api_key=os.getenv("GOOGLE_API_KEY"),
 )
 
 
 # ============================================================
-# RAG
+# TOOLS
 # ============================================================
 
-retriever, num_docs = get_retriever()
+@tool
+def document_search(query: str) -> str:
+    """Search information from the uploaded PDF."""
+
+    docs = retriever.invoke(query)
+
+    if not docs:
+        return "No information found in the document."
+
+    return "\n\n".join(
+        doc.page_content
+        for doc in docs
+    )
+
+
+@tool
+def system_datetime() -> str:
+    """Get the current date and time."""
+
+    return datetime.now().strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
 
 
 # ============================================================
-# CONVERSATION MEMORY
+# BIND TOOLS
+# ============================================================
+
+tools = [
+    document_search,
+    system_datetime
+]
+
+llm_with_tools = llm.bind_tools(tools)
+
+
+# ============================================================
+# CONVERSATION HISTORY
 # ============================================================
 
 chat_history = []
 
 
 # ============================================================
-# GET TEXT FROM GEMINI
+# GET ONLY TEXT
 # ============================================================
 
 def get_text(response):
 
     content = response.content
 
+    # Normal string response
     if isinstance(content, str):
         return content
 
+    # Gemini content blocks
     if isinstance(content, list):
+
         return "".join(
             item.get("text", "")
             for item in content
             if isinstance(item, dict)
+            and item.get("type") == "text"
         )
 
     return str(content)
 
 
 # ============================================================
-# RUN AGENT
+# ASK AI
 # ============================================================
 
 def ask(query):
 
-    history = "\n".join(
-        f"User: {item['user']}\nAI: {item['ai']}"
-        for item in chat_history[-10:]
+    # Current question
+    messages = chat_history[-10:] + [
+        HumanMessage(content=query)
+    ]
+
+
+    # ========================================================
+    # FIRST LLM CALL
+    # ========================================================
+
+    response = llm_with_tools.invoke(messages)
+
+
+    # ========================================================
+    # TOOL CALL
+    # ========================================================
+
+    if response.tool_calls:
+
+        # Add AI tool-call message
+        messages.append(response)
+
+        for tool_call in response.tool_calls:
+
+            # -------------------------------
+            # Document Search
+            # -------------------------------
+
+            if tool_call["name"] == "document_search":
+
+                result = document_search.invoke(
+                    tool_call
+                )
+
+
+            # -------------------------------
+            # Date / Time
+            # -------------------------------
+
+            elif tool_call["name"] == "system_datetime":
+
+                result = system_datetime.invoke(
+                    tool_call
+                )
+
+
+            else:
+
+                result = "Unknown tool."
+
+            # Add tool result
+            messages.append(result)
+
+
+        # ====================================================
+        # SECOND LLM CALL
+        # ====================================================
+
+        response = llm_with_tools.invoke(messages)
+
+
+    # ========================================================
+    # GET ONLY TEXT
+    # ========================================================
+
+    answer = get_text(response)
+
+
+    # ========================================================
+    # SAVE HISTORY
+    # ========================================================
+
+    chat_history.append(
+        HumanMessage(content=query)
     )
 
-    prompt = f"""
-You are a helpful AI assistant.
+    chat_history.append(response)
 
-Conversation history:
-{history}
-
-Available tools:
-
-1. document_search
-   Use this for questions about the knowledge covered
-   by the uploaded PDF.
-
-   IMPORTANT:
-   For knowledge questions, ALWAYS search the document
-   before answering.
-
-   Do NOT answer from your own knowledge when the document
-   may contain the answer.
-
-2. system_datetime
-   Use this whenever the user asks for the current
-   date, current time, today's date, or current system time.
-
-Important:
-- For current time/date questions, ALWAYS use system_datetime.
-- For "what was my last question?", use conversation history.
-- Do NOT use document_search for conversation questions.
-- Answer normally when no tool is needed.
-
-Return ONLY JSON.
-
-If a tool is needed:
-
-{{
-    "tool": "tool_name",
-    "input": "tool input"
-}}
-
-If no tool is needed:
-
-{{
-    "tool": null,
-    "input": "answer"
-}}
-
-User:
-{query}
-"""
-
-    response = llm.invoke(prompt)
-    text = get_text(response)
-
-    # Remove markdown JSON fences
-    text = text.replace("```json", "").replace("```", "").strip()
-
-    try:
-        decision = json.loads(text)
-    except:
-        decision = {
-            "tool": None,
-            "input": text
-        }
-
-    tool = decision.get("tool")
-    tool_input = decision.get("input", query)
-
-
-    # ========================================================
-    # TOOL: DOCUMENT SEARCH
-    # ========================================================
-
-    if tool == "document_search":
-
-        result = tools.document_search.invoke({
-            "query": tool_input,
-            "retriever": retriever
-        })
-
-
-    # ========================================================
-    # TOOL: CURRENT TIME
-    # ========================================================
-
-    elif tool == "system_datetime":
-
-        result = tools.system_datetime.invoke({})
-
-
-    # ========================================================
-    # NO TOOL
-    # ========================================================
-
-    else:
-
-        result = tool_input
-
-
-    # ========================================================
-    # FINAL ANSWER
-    # ========================================================
-
-    if tool is not None:
-
-        final_prompt = f"""
-Answer the user's question using the tool result.
-
-User:
-{query}
-
-Tool result:
-{result}
-
-Give only the final answer.
-"""
-
-        final_response = llm.invoke(final_prompt)
-        answer = get_text(final_response)
-
-    else:
-
-        answer = result
-
-
-    # Save conversation
-    chat_history.append({
-        "user": query,
-        "ai": answer
-    })
 
     return answer
 
 
 # ============================================================
-# START
+# START PROGRAM
 # ============================================================
 
 print("==================================")
 print("SMART AI KNOWLEDGE ASSISTANT")
 print("==================================")
+
 print(f"Documents loaded: {num_docs}")
+
 print("Type 'exit' to quit.")
 
+
+# ============================================================
+# CHAT LOOP
+# ============================================================
 
 while True:
 
     user = input("\nYou: ")
 
     if user.lower().strip() in ["exit", "quit"]:
+
         print("Goodbye!")
+
         break
+
 
     if not user.strip():
         continue
+
 
     answer = ask(user)
 
