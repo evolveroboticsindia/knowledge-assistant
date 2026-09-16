@@ -1,5 +1,7 @@
 # 🧠 Smart AI Knowledge Assistant
 
+👉 [Give Your Feedback](https://forms.gle/BMUCLDHXT4m95QhV7)
+
 A simple AI assistant built with **LangChain, Google Gemini, FAISS, and RAG**.
 
 It can:
