@@ -2,26 +2,31 @@ import datetime
 from langchain.tools import tool
 
 
-@tool
-def document_search(query: str, retriever) -> str:
-    """Search information from the uploaded PDF."""
+def create_tools(retriever):
 
-    docs = retriever.invoke(query)
+    @tool
+    def document_search(query: str) -> str:
+        """Search information from the uploaded PDF."""
 
-    if not docs:
-        return "No information found in the document."
+        docs = retriever.invoke(query)
 
-    return "\n\n".join(
-        doc.page_content[:800]
-        for doc in docs[:3]
-    )
+        if not docs:
+            return "No information found in the document."
 
+        return "\n\n".join(
+            doc.page_content[:800]
+            for doc in docs[:3]
+        )
 
-@tool
-def system_datetime() -> str:
-    """Return the current system date and time."""
+    @tool
+    def system_datetime() -> str:
+        """Return the current system date and time."""
 
-    return datetime.datetime.now().strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
+        return datetime.datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
 
+    return [
+        document_search,
+        system_datetime
+    ]
